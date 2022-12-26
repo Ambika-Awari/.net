@@ -1,0 +1,60 @@
+name: Trigger auto deployment for myaca
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ main ]
+    paths:
+    - '**'
+    - '.github/workflows/myaca-AutoDeployTrigger-999f120f-2273-4c5a-86f4-d74723abc6ee.yml'
+
+  # Allow mannually trigger 
+  workflow_dispatch:      
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to container registry
+        uses: docker/login-action@v1
+        with:
+          registry: containerapp0321.azurecr.io
+          username: ${{ secrets.MYACA_REGISTRY_USERNAME }}
+          password: ${{ secrets.MYACA_REGISTRY_PASSWORD }}
+
+      - name: Build and push container image to registry
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: containerapp0321.azurecr.io/acrdockergit:${{ github.sha }}
+          file: ./Dockerfile
+          context: ./
+
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.MYACA_AZURE_CREDENTIALS }}
+
+
+      - name: Deploy to containerapp
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp registry set -n myaca -g dot-net --server containerapp0321.azurecr.io --username  ${{ secrets.MYACA_REGISTRY_USERNAME }} --password ${{ secrets.MYACA_REGISTRY_PASSWORD }}
+            az containerapp update -n myaca -g dot-net --image containerapp0321.azurecr.io/acrdockergit:${{ github.sha }}
